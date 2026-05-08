@@ -5,11 +5,15 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+from __future__ import annotations
+
+from enum import Enum
 import pathlib
 
 from rachis import sdk
 from rachis.plugin import model
 from rachis.core import util
+
 
 
 def identity_transformer(view):
@@ -232,3 +236,178 @@ class ObjectType(ModelType):
         if not isinstance(view, self._view_type):
             raise TypeError("%r is not of type %r, cannot transform further."
                             % (view, self._view_type))
+
+
+class TransformType(Enum):
+    registered = 1
+    wrap = 2
+    unwrap = 3
+
+
+class SearchNode:
+    def __init__(
+        self,
+        type_: type,
+        parent: SearchNode | None,
+        transform_type: TransformType = TransformType.registered
+    ):
+        self.type_ = type_
+        self.parent = parent
+        self.transform_type = transform_type
+
+    def __eq__(self, other):
+        return self.type_ == other.type_
+
+    def __hash__(self):
+        return hash(self.type_)
+
+    def __repr__(self):
+        return (
+            f'SearchNode(id={id(self)}, type_={repr(self.type_)}, '
+            f'parent={None if self.parent is None else id(self.parent)}, '
+            f'transform_type={self.transform_type})'
+        )
+
+
+def find_transformation_path(start: type, target: type) -> SearchNode | None:
+    '''
+    Searches for a transformation path from `start` to `target`. The path is
+    encoded in the chain of parents of the returned SearchNode.
+
+    Parameters
+    ----------
+    start : type
+        The type we wish to transform from.
+    target : type
+        The type we wish to transform to.
+
+    Returns
+    -------
+    SearchNode | None
+        A SearchNode of the target type, if reachable, otherwise None.
+    '''
+    pm = sdk.PluginManager()
+
+    visited: set[SearchNode] = set()
+    current = SearchNode(type_=start, parent=None)
+    outstanding: list[SearchNode] = [current]
+    while outstanding != []:
+        current = outstanding.pop()
+
+        if current in visited:
+            continue
+        else:
+            visited.add(current)
+
+        if current.type_ == target:
+            return current
+
+        for neighbor in pm.transformers.get(current.type_, []):
+            outstanding.insert(0, SearchNode(type_=neighbor, parent=current))
+
+        if issubclass(current.type_, model.base.FormatBase):
+            # add synthetic link for Dx -> x
+            if issubclass(current.type_, model.SingleFileDirectoryFormatBase):
+                neighbor = SearchNode(
+                    type_=current.type_.file.format,
+                    parent=current,
+                    transform_type=TransformType.unwrap
+                )
+                outstanding.insert(0, neighbor)
+
+            # add synthetic link(s) x -> Dx
+            else:
+                for sfdf in pm._ff_to_sfdf.get(current.type_, []):
+                    neighbor = SearchNode(
+                        type_=sfdf,
+                        parent=current,
+                        transform_type=TransformType.wrap
+                    )
+                    outstanding.insert(0, neighbor)
+
+    return None
+
+
+def compose_transformation(target: SearchNode | None, recorder=None):
+    if target is None:
+        return None
+
+    pm = sdk.PluginManager()
+
+    steps = []
+    current = target
+    while current is not None:
+        steps.insert(0, current)
+        current = current.parent
+
+    if recorder is not None:
+        if len(steps) == 1:
+            # todo (identity case)
+            pass
+        for step in steps:
+            # todo
+            pass
+
+    if len(steps) == 1:
+        def identity_transformation(view, validate_level='min'):
+            from_mt = ModelType.from_view_type(steps[0].type_)
+            current = from_mt.coerce_view(view)
+            from_mt.validate(current, level=validate_level)
+
+            return current
+
+        return identity_transformation
+
+    def transformation(view, validate_level='min'):
+        current = view
+        for i in range(len(steps) - 1):
+            from_type = steps[i].type_
+            to_type = steps[i + 1].type_
+
+            if steps[i + 1].transform_type == TransformType.wrap:
+                transformer = wrap_transformer(from_type, to_type)
+            elif steps[i + 1].transform_type == TransformType.unwrap:
+                transformer = unwrap_transformer(from_type)
+            else:
+                transformer = pm.transformers[from_type][to_type].transformer
+
+            from_mt = ModelType.from_view_type(from_type)
+            to_mt = ModelType.from_view_type(to_type)
+
+            current = from_mt.coerce_view(current)
+            from_mt.validate(current, level=validate_level)
+            current = transformer(current)
+
+            current = to_mt.coerce_view(current)
+            to_mt.validate(current, level=validate_level)
+            to_mt.set_user_owned(current, False)
+
+        return current
+
+    return transformation
+
+
+def wrap_transformer(file_type: type, sfdf_type: type):
+    '''
+    A transformer used to convert any `FileFormat` into its associated
+    `SingleFileDirectoryFormat`.
+    '''
+    def transformer(view):
+        sfdf = sfdf_type()
+        sfdf.file.write_data(view, file_type)
+        return sfdf
+
+    return transformer
+
+
+def unwrap_transformer(sfdf_type: type):
+    '''
+    A transformer used to convert any `SingleFileDirectoryFormat` into the
+    contained `FileFormat`.
+    '''
+    file_type = sfdf_type.file.format
+
+    def transformer(view):
+        return view.file.view(file_type)
+
+    return transformer
