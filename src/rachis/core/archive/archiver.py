@@ -899,8 +899,6 @@ class Archiver:
         return [metadata_paths, relative_metadata_paths]
 
     def redact_metadata(self):
-        from rachis.core.exceptions import RachisWarning
-        import warnings
         '''
         Empties metadata files. It is also neccessary to remove the
         corresponding lines in the `checksums` file.
