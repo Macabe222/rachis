@@ -907,17 +907,14 @@ class Archiver:
         '''
         metadata_paths, relative_metadata_paths = self.metadata_paths()
 
-        warnings.warn(f'Redacting from: {self.root_dir}', RachisWarning)
-        warnings.warn(f'Paths: {metadata_paths}', RachisWarning)
-
         if len(metadata_paths) == 0:
             raise ValueError(
-                'Cannot redact metadata froma an Artifact without metadata.'
+                'Cannot redact metadata from a Result without metadata.'
             )
 
         if all(os.path.getsize(path) == 0 for path in metadata_paths):
             raise ValueError(
-                'Cannot redact metadata from an Artifact with only redacted '
+                'Cannot redact metadata from a Result with only redacted '
                 'metadata files.'
             )
 
