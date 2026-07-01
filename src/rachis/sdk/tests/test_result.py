@@ -13,6 +13,8 @@ import pathlib
 import pytest
 import subprocess
 
+from rachis import Metadata
+from rachis.sdk.plugin_manager import PluginManager
 import rachis.core.type
 from rachis.sdk import Result, Artifact, Visualization, ResultCollection
 from rachis.sdk.result import ResultMetadata
@@ -781,8 +783,6 @@ class TestResultCollection(unittest.TestCase):
 class TestRedactMetadata(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from qiime2 import Metadata
-        from qiime2.sdk.plugin_manager import PluginManager
         cls.tempdir = tempfile.mkdtemp(prefix='qiime2-q2cli-test-temp-')
 
         metadata_path = os.path.join(cls.tempdir, 'metadata.tsv')
