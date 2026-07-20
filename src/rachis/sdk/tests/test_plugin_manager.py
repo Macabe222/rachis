@@ -50,6 +50,10 @@ class TestPluginManager(unittest.TestCase):
         self.plugin = get_dummy_plugin()
         self.other_plugin = self.pm.plugins['other-plugin']
 
+    def test_plugin_name_clash(self):
+        with self.assertRaisesRegex(KeyError, 'already exists.'):
+            self.pm.add_plugin(self.plugin)
+
     def test_plugins(self):
         plugins = self.pm.plugins
 

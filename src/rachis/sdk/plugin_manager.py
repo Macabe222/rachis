@@ -122,8 +122,11 @@ class PluginManager:
 
     def add_plugin(self, plugin, package=None, project_name=None,
                    consistency_check=True):
+        if plugin.name in self.plugins.keys():
+            raise KeyError(f'{plugin.name} already exists.')
+
         self.plugins[plugin.name] = plugin
-        self._plugin_by_id[plugin.id] = plugin
+        self._plugin_by_id[plugin.id] =  plugin
         if plugin.package is None:
             plugin.package = package
         if plugin.project_name is None:
