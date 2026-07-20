@@ -344,6 +344,11 @@ class PipelineSignature:
                             % self.__class__.__name__)
 
         for output_name, spec in outputs.items():
+            if not output_name.isidentifier():
+                raise ValueError(
+                    f'Output name "{output_name}" must be a valid python '
+                    'identifier.'
+                )
             if not (is_semantic_type(spec.qiime_type) or
                     spec.qiime_type == Visualization or
                     spec.qiime_type == Collection[Visualization]):
