@@ -7,11 +7,14 @@
 # ----------------------------------------------------------------------------
 
 import re
+import os
 import shutil
 import sys
 import pathlib
+import warnings
 
 from rachis.core import transform
+from rachis.core.exceptions import RachisWarning
 from .base import FormatBase, ValidationError, _check_validation_level
 
 
@@ -177,11 +180,15 @@ class DirectoryFormat(FormatBase, metaclass=_DirectoryMeta):
             getattr(self, field)._validate_members(collected_paths, level)
 
         for path, value in collected_paths.items():
-            if value:
-                continue
             if value is None:
                 raise ValidationError("Unrecognized file (%s) for %s."
                                       % (path, self.__class__.__name__))
+            if os.path.getsize(path) == 0 and len(collected_paths) == 1:
+               warnings.warn(
+                   f'Format {self.__class__.__name__} consists of one empty '
+                   'file.',
+                   RachisWarning
+               )
         if hasattr(self, '_validate_'):
             try:
                 self._validate_(level)
