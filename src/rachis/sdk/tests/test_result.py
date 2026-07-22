@@ -13,16 +13,19 @@ import pathlib
 import pytest
 import subprocess
 
+from rachis import Metadata
+from rachis.sdk.plugin_manager import PluginManager
 import rachis.core.type
 from rachis.sdk import Result, Artifact, Visualization, ResultCollection
 from rachis.sdk.result import ResultMetadata
+from rachis.sdk.proxy import ProxyResult
 from rachis.core.annotate import Signature
 import rachis.core.archive as archive
 import rachis.core.exceptions as exceptions
 
 from rachis.core.testing.format import IntSequenceDirectoryFormat
 from rachis.core.testing.type import (FourInts, SingleInt, IntSequence1,
-                                      IntSequence2)
+                                      IntSequence2, Foo, Bar)
 from rachis.core.testing.util import get_dummy_plugin, ArchiveTestingMixin
 from rachis.core.testing.visualizer import mapping_viz
 from rachis.core.util import set_permissions, OTHER_NO_WRITE
@@ -57,6 +60,28 @@ class TestResult(unittest.TestCase, ArchiveTestingMixin):
                 NotImplementedError,
                 'Result constructor.*private.*Result.load'):
             Result()
+
+    def test_alias_type_must_refine_realized_type(self):
+        artifact = Artifact.import_data(Foo, 'foo', view_type=str)
+
+        with self.assertRaisesRegex(
+                TypeError,
+                "Alias type Bar must be a subtype of realized result type "
+                "Foo"):
+            artifact._alias('output', None, None, Bar)
+
+    def test_proxy_alias_type_must_refine_known_type(self):
+        class Future:
+            def result(self):
+                raise AssertionError("Proxy alias type check blocked.")
+
+        proxy = ProxyResult(Future(), 'output', Foo)
+
+        with self.assertRaisesRegex(
+                TypeError,
+                "Alias type Bar must be a subtype of realized result type "
+                "Foo"):
+            proxy._alias('output', None, None, Bar)
 
     def test_load_artifact(self):
         saved_artifact = Artifact.import_data(FourInts, [-1, 42, 0, 43])
@@ -755,6 +780,46 @@ class TestResultCollection(unittest.TestCase):
             collection.validate_checksums()
 
 
+class TestRedactMetadata(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tempdir = tempfile.mkdtemp(prefix='qiime2-q2cli-test-temp-')
+
+        metadata_path = os.path.join(cls.tempdir, 'metadata.tsv')
+        with open(metadata_path, 'w') as fh:
+            fh.write('sample-id\tbarcode-sequence\n')
+            fh.write('1\tACT')
+        dummy_md = Metadata.load(metadata_path)
+
+        pm = PluginManager()
+        identity_with_metadata = pm.plugins['dummy-plugin'].actions[
+            'identity_with_metadata'
+        ]
+
+        artifact1 = Artifact.import_data(IntSequence1, [0, 6, 7])
+        cls.artifact1, = identity_with_metadata(artifact1, dummy_md)
+        artifact2 = Artifact.import_data(IntSequence2, [3, 4, 5])
+        cls.artifact2, = identity_with_metadata(artifact2, dummy_md)
+        cls.artifact3 = Artifact.import_data(SingleInt, 9)
+
+    def test_redact_metadata_success(self):
+        self.artifact1.redact_metadata()
+        metadata_paths, _ = self.artifact1.metadata_paths()
+
+        for path in metadata_paths:
+            self.assertEqual(os.path.getsize(path), 0)
+
+    def test_redact_metadata_twice_fails(self):
+        self.artifact2.redact_metadata()
+
+        with self.assertRaisesRegex(ValueError, 'only redacted metadata'):
+            self.artifact2.redact_metadata()
+
+    def test_redact_metadata_no_metadata(self):
+        with self.assertRaisesRegex(ValueError, 'Result without metadata'):
+            self.artifact3.redact_metadata()
+
+
 @pytest.fixture
 def signature_test_env(monkeypatch):
     # fake key info that gpg_find_key would normally parse
@@ -810,7 +875,9 @@ def signature_test_env(monkeypatch):
     # patch calls to gpg_find_key with fake dict & subprocess.run w/fake_run
     monkeypatch.setattr(rachis.core.annotate,
                         'gpg_find_key', fake_gpg_find_key)
-    monkeypatch.setattr(rachis.sdk.result, 'gpg_find_key', fake_gpg_find_key)
+    monkeypatch.setattr(
+        rachis.core.archive.archiver, 'gpg_find_key', fake_gpg_find_key
+    )
     monkeypatch.setattr(subprocess, 'run', fake_run)
 
     def set_key_lookup(mode):

@@ -10,7 +10,7 @@ from importlib import import_module
 
 from rachis.plugin import (Plugin, Bool, Int, Str, Choices, Range, List, Set,
                            Collection, Visualization, Metadata, MetadataColumn,
-                           Categorical, Numeric, TypeMatch)
+                           Categorical, Numeric, TypeMatch, Properties)
 
 from .format import (
     IntSequenceFormat,
@@ -47,7 +47,8 @@ from .method import (concatenate_ints, split_ints, merge_mappings,
                      docstring_order_method, variadic_input_method,
                      unioned_primitives, type_match_list_and_set, union_inputs,
                      list_of_ints, dict_of_ints, returns_int, varied_method,
-                     random_seed_method, random_seed_method_set_twice,
+                     random_seed_method, random_seed_method_get_or_set_twice,
+                     random_seed_method_set_twice,
                      random_seed_method_never_set,
                      collection_inner_union, collection_outer_union,
                      dict_params, list_params, _underscore_method,
@@ -70,8 +71,12 @@ from .pipeline import (parameter_only_pipeline, typical_pipeline,
                        internal_fail_pipeline, de_facto_list_pipeline,
                        mix_arts_and_proxies, de_facto_dict_pipeline,
                        de_facto_collection_pipeline, list_pipeline,
-                       collection_pipeline, pointless_pipeline,
-                       failing_pipeline, viz_collection_pipeline)
+                       collection_pipeline, property_refinement_pipeline,
+                       property_refinement_collection_pipeline,
+                       property_refinement_mismatch_pipeline,
+                       pointless_pipeline,
+                       failing_pipeline, viz_collection_pipeline,
+                       resumable_random_seed_pipeline)
 from ..cite import Citations
 
 from .examples import (concatenate_ints_simple, concatenate_ints_complex,
@@ -1070,6 +1075,33 @@ dummy_plugin.pipelines.register_function(
 )
 
 dummy_plugin.pipelines.register_function(
+    function=property_refinement_pipeline,
+    inputs={},
+    parameters={},
+    outputs=[('output', Foo % Properties('A'))],
+    name='Refine pipeline output property',
+    description='Returns a broader artifact than its output annotation'
+)
+
+dummy_plugin.pipelines.register_function(
+    function=property_refinement_collection_pipeline,
+    inputs={},
+    parameters={},
+    outputs=[('output', Collection[Foo % Properties('A')])],
+    name='Refine pipeline collection output property',
+    description='Returns broader artifacts than its collection annotation'
+)
+
+dummy_plugin.pipelines.register_function(
+    function=property_refinement_mismatch_pipeline,
+    inputs={},
+    parameters={},
+    outputs=[('output', Foo % Properties('A'))],
+    name='Mismatch pipeline output property',
+    description='Returns an artifact with an empty output intersection'
+)
+
+dummy_plugin.pipelines.register_function(
     function=pointless_pipeline,
     inputs={},
     parameters={},
@@ -1106,6 +1138,21 @@ dummy_plugin.pipelines.register_function(
     name='Return a collection of Visualizations',
     description='Just returns a collection of Visualizations',
     examples={'collection_of_visualizations': collection_of_visualizations}
+)
+
+dummy_plugin.pipelines.register_function(
+    function=resumable_random_seed_pipeline,
+    inputs={},
+    parameters={
+        'fail': Bool,
+        'random_seed': Int,
+    },
+    outputs=[
+        ('random_seed', SingleInt)
+    ],
+    name=('Takes a random seed and returns it but this time as a pipeline that'
+          ' can be resumed.'),
+    description='Just returns a random int',
 )
 
 dummy_plugin.methods.register_function(
@@ -1284,15 +1331,28 @@ dummy_plugin.methods.register_function(
 )
 
 dummy_plugin.methods.register_function(
-    function=random_seed_method_set_twice,
+    function=random_seed_method_get_or_set_twice,
     inputs={},
     parameters={
        'random_seed': Int
     },
     outputs=[('seed', SingleInt)],
+    name='Run get_or_set on the the CaptureHolder twice.',
+    description='Runs get_or_set on the CaptureHolder object twice and asserts'
+                ' the value does not change.'
+)
+
+dummy_plugin.methods.register_function(
+    function=random_seed_method_set_twice,
+    inputs={},
+    parameters={
+       'random_seed': Int,
+       'overwrite': Bool,
+    },
+    outputs=[('seed', SingleInt)],
     name='Sets the value on the Capture twice.',
-    description='Sets the value on the Capture object twice. This will always'
-                ' raise an error.'
+    description='Sets the value on the Capture object twice. This will raise '
+                ' an error if we do not overwrite.'
 )
 
 dummy_plugin.methods.register_function(

@@ -105,8 +105,13 @@ class TestPlugin(unittest.TestCase):
                           'internal_fail_pipeline', 'de_facto_list_pipeline',
                           'mix_arts_and_proxies', 'de_facto_dict_pipeline',
                           'de_facto_collection_pipeline', 'list_pipeline',
-                          'collection_pipeline', 'failing_pipeline',
+                          'collection_pipeline',
+                          'property_refinement_pipeline',
+                          'property_refinement_collection_pipeline',
+                          'property_refinement_mismatch_pipeline',
+                          'failing_pipeline',
                           'viz_collection_pipeline',
+                          'resumable_random_seed_pipeline',
                           'docstring_order_method',
                           'constrained_input_visualization',
                           'combinatorically_mapped_method',
@@ -129,6 +134,7 @@ class TestPlugin(unittest.TestCase):
                           'dict_params', 'list_params', 'varied_method',
                           '_underscore_method', 'return_four_ints',
                           'return_many_ints', 'random_seed_method',
+                          'random_seed_method_get_or_set_twice',
                           'random_seed_method_set_twice',
                           'random_seed_method_never_set',
                           'raises_rachis_warning'
@@ -178,7 +184,9 @@ class TestPlugin(unittest.TestCase):
                           'collection_outer_union', 'dict_params',
                           'list_params', 'varied_method', '_underscore_method',
                           'return_four_ints', 'return_many_ints',
-                          'random_seed_method', 'random_seed_method_set_twice',
+                          'random_seed_method',
+                          'random_seed_method_get_or_set_twice',
+                          'random_seed_method_set_twice',
                           'random_seed_method_never_set',
                           'raises_rachis_warning'
                           })
@@ -207,8 +215,13 @@ class TestPlugin(unittest.TestCase):
                           'internal_fail_pipeline', 'de_facto_list_pipeline',
                           'mix_arts_and_proxies', 'de_facto_dict_pipeline',
                           'de_facto_collection_pipeline', 'list_pipeline',
-                          'collection_pipeline', 'failing_pipeline',
-                          'viz_collection_pipeline'})
+                          'collection_pipeline',
+                          'property_refinement_pipeline',
+                          'property_refinement_collection_pipeline',
+                          'property_refinement_mismatch_pipeline',
+                          'failing_pipeline',
+                          'viz_collection_pipeline',
+                          'resumable_random_seed_pipeline'})
         for pipeline in pipelines.values():
             self.assertIsInstance(pipeline, rachis.sdk.Pipeline)
 

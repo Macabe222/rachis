@@ -5,10 +5,13 @@
 #
 # The full license is in the file LICENSE, distributed with this software.
 # ----------------------------------------------------------------------------
+import sys
+import random
 
-from .type import SingleInt, Mapping
-from rachis.sdk.result import ResultCollection
+from .type import SingleInt, Mapping, Foo, Bar
+from rachis.sdk.result import ResultCollection, Artifact
 from rachis.core.testing.util import PipelineError
+from rachis.plugin import IContext, CaptureHolder
 
 
 def parameter_only_pipeline(ctx, int1, int2=2, metadata=None, other=False):
@@ -287,6 +290,21 @@ def de_facto_collection_pipeline(ctx):
     return [art1, art2]
 
 
+def property_refinement_pipeline(ctx):
+    return ctx.make_artifact(Foo, 'foo', view_type=str)
+
+
+def property_refinement_collection_pipeline(ctx):
+    return [
+        ctx.make_artifact(Foo, 'foo', view_type=str),
+        ctx.make_artifact(Foo, 'bar', view_type=str)
+    ]
+
+
+def property_refinement_mismatch_pipeline(ctx):
+    return ctx.make_artifact(Bar, 'bar', view_type=str)
+
+
 def pointless_pipeline(ctx):
     # Use a real type expression instead of a string.
     return ctx.make_artifact(SingleInt, 4)
@@ -330,3 +348,22 @@ def viz_collection_pipeline(ctx, ints):
     viz2, = most_common_viz(ints)
 
     return [viz1, viz2]
+
+
+def resumable_random_seed_pipeline(
+            ctx: IContext,
+            fail: bool = False,
+            random_seed: CaptureHolder[int] = None
+        ) -> Artifact:
+    random_int = CaptureHolder.get_or_set(
+        random_seed, lambda: random.randrange(sys.maxsize)
+    )
+
+    random_seed_method = ctx.get_action('dummy_plugin', 'random_seed_method')
+    random_int_art, = random_seed_method(random_int)
+
+    if fail:
+        uuids = [str(random_int_art.uuid)]
+        raise PipelineError(uuids)
+
+    return random_int_art
