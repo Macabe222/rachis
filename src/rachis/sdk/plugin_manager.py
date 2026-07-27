@@ -132,7 +132,7 @@ class PluginManager:
             )
 
         self.plugins[plugin.name] = plugin
-        self._plugin_by_id[plugin.id] =  plugin
+        self._plugin_by_id[plugin.id] = plugin
         if plugin.package is None:
             plugin.package = package
         if plugin.project_name is None:
