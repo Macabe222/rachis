@@ -28,6 +28,10 @@ class UninitializedPluginManagerError(Exception):
     pass
 
 
+class DuplicatePluginError(Exception):
+    pass
+
+
 class PluginManager:
     entry_point_group = 'rachis.plugins'
     __instance = None
@@ -122,8 +126,10 @@ class PluginManager:
 
     def add_plugin(self, plugin, package=None, project_name=None,
                    consistency_check=True):
-        if plugin.name in self.plugins.keys():
-            raise KeyError(f'{plugin.name} already exists.')
+        if plugin.name in self.plugins:
+            raise DuplicatePluginError(
+                f'A plugin by the name of {plugin.name} is already registered.'
+            )
 
         self.plugins[plugin.name] = plugin
         self._plugin_by_id[plugin.id] =  plugin

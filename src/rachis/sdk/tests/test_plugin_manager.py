@@ -12,7 +12,7 @@ import rachis.plugin
 import rachis.sdk
 from rachis.plugin.plugin import (SemanticTypeRecord, FormatRecord,
                                   ArtifactClassRecord)
-from rachis.sdk.plugin_manager import GetFormatFilters
+from rachis.sdk.plugin_manager import GetFormatFilters, DuplicatePluginError
 
 from rachis.core.testing.type import (IntSequence1, IntSequence2, IntSequence3,
                                       Mapping, FourInts, Kennel, Dog, Cat,
@@ -51,7 +51,7 @@ class TestPluginManager(unittest.TestCase):
         self.other_plugin = self.pm.plugins['other-plugin']
 
     def test_plugin_name_clash(self):
-        with self.assertRaisesRegex(KeyError, 'already exists.'):
+        with self.assertRaises(DuplicatePluginError):
             self.pm.add_plugin(self.plugin)
 
     def test_plugins(self):
