@@ -30,12 +30,17 @@ from .format import (
     Cephalapod,
     CephalapodDirectoryFormat,
     ImportableOnlyFormat,
-    ExportableOnlyFormat
+    ExportableOnlyFormat,
+    FirstStepFormat,
+    SecondStepFormat,
+    ThirdStepFormat,
+    FourthStepFormat
 )
 
 from .type import (IntSequence1, IntSequence2, IntSequence3, Mapping, FourInts,
                    SingleInt, Kennel, Dog, Cat, C1, C2, C3, Foo, Bar, Baz,
-                   AscIntSequence, Squid, Octopus, Cuttlefish)
+                   AscIntSequence, Squid, Octopus, Cuttlefish, FirstStep,
+                   SecondStep, ThirdStep, FourthStep)
 from .method import (concatenate_ints, split_ints, merge_mappings,
                      identity_with_metadata, identity_with_metadata_column,
                      identity_with_categorical_metadata_column,
@@ -120,7 +125,9 @@ dummy_plugin.register_formats(
     IntSequenceFormatV2, MappingFormat, IntSequenceV2DirectoryFormat,
     IntSequenceMultiFileDirectoryFormat, MappingDirectoryFormat,
     EchoDirectoryFormat, EchoFormat, Cephalapod, CephalapodDirectoryFormat,
-    ImportableOnlyFormat, ExportableOnlyFormat)
+    ImportableOnlyFormat, ExportableOnlyFormat, FirstStepFormat,
+    SecondStepFormat, ThirdStepFormat, FourthStepFormat
+)
 
 dummy_plugin.register_formats(
     FourIntsDirectoryFormat, UnimportableDirectoryFormat, UnimportableFormat,
@@ -182,6 +189,31 @@ dummy_plugin.register_artifact_class(
     description="The second IntSequence",
     examples={'IntSequence2 import example': is2_use}
 )
+
+dummy_plugin.register_artifact_class(
+    FirstStep,
+    directory_format=FirstStepFormat,
+    description="First step"
+)
+
+dummy_plugin.register_artifact_class(
+    SecondStep,
+    directory_format=SecondStepFormat,
+    description="Second step"
+)
+
+dummy_plugin.register_artifact_class(
+    ThirdStep,
+    directory_format=ThirdStepFormat,
+    description="Third step"
+)
+
+dummy_plugin.register_artifact_class(
+    FourthStep,
+    directory_format=FourthStepFormat,
+    description="Fourth step"
+)
+
 dummy_plugin.register_semantic_type_to_format(
     IntSequence3,
     directory_format=IntSequenceMultiFileDirectoryFormat

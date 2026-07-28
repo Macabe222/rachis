@@ -23,7 +23,11 @@ from .format import (
     RedundantSingleIntDirectoryFormat,
     EchoFormat,
     ImportableOnlyFormat,
-    ExportableOnlyFormat
+    ExportableOnlyFormat,
+    FirstStepFormat,
+    SecondStepFormat,
+    ThirdStepFormat,
+    FourthStepFormat
 )
 from .plugin import dummy_plugin, citations
 
@@ -206,3 +210,21 @@ def _4242(data: ImportableOnlyFormat) -> IntSequenceDirectoryFormat:
 @dummy_plugin.register_transformer()
 def _4243(data: IntSequenceDirectoryFormat) -> ExportableOnlyFormat:
     return ExportableOnlyFormat()
+
+
+# only for testing transitive transformers
+@dummy_plugin.register_transformer(upgrade=True)
+def _6000(data: FirstStepFormat) -> SecondStepFormat:
+    return SecondStepFormat()
+
+
+# only for testing transitive transformers
+@dummy_plugin.register_transformer(upgrade=True)
+def _6001(data: SecondStepFormat) -> ThirdStepFormat:
+    return ThirdStepFormat()
+
+
+# only for testing transitive transformers
+@dummy_plugin.register_transformer
+def _6002(data: ThirdStepFormat) -> FourthStepFormat:
+    return FourthStepFormat()

@@ -15,7 +15,6 @@ from rachis.plugin import model
 from rachis.core import util
 
 
-
 def identity_transformer(view):
     return view
 
@@ -56,32 +55,15 @@ class ModelType:
             self._record = self._pm.views[self._view_name]
 
     def make_transformation(self, other, recorder=None):
-        # record may be None in case of identity transformer
-        transformer, transformer_record = self._get_transformer_to(other)
-        if transformer is None:
+        target_node = find_transformation_path(
+            self._view_type, other._view_type
+        )
+
+        if target_node is None:
             raise Exception("No transformation from %r to %r" %
                             (self._view_type, other._view_type))
 
-        if recorder is not None:
-            recorder(transformer_record, input_name=self._view_name,
-                     input_record=self._record, output_name=other._view_name,
-                     output_record=other._record)
-
-        def transformation(view, validate_level='min'):
-            view = self.coerce_view(view)
-            self.validate(view, level=validate_level)
-
-            new_view = transformer(view)
-
-            new_view = other.coerce_view(new_view)
-            other.validate(new_view)
-
-            if transformer is not identity_transformer:
-                other.set_user_owned(new_view, False)
-
-            return new_view
-
-        return transformation
+        return compose_transformation(target_node)
 
     def _get_transformer_to(self, other):
         transformer, record = self._lookup_transformer(self._view_type,
@@ -117,11 +99,11 @@ class ModelType:
     def _lookup_transformer(self, from_, to_):
         if from_ == to_:
             return identity_transformer, None
-        try:
-            record = self._pm.transformers[from_][to_]
-            return record.transformer, record
-        except KeyError:
+
+        search_node = find_transformation_path(from_, to_)
+        if search_node is None or search_node.record is None:
             return None, None
+        return search_node.record.transformer, search_node.record
 
     def set_user_owned(self, view, value):
         pass
@@ -249,11 +231,15 @@ class SearchNode:
         self,
         type_: type,
         parent: SearchNode | None,
-        transform_type: TransformType = TransformType.registered
+        record = None,
+        transform_type: TransformType = TransformType.registered,
+        steps = 0
     ):
         self.type_ = type_
         self.parent = parent
+        self.record = record
         self.transform_type = transform_type
+        self.steps = steps
 
     def __eq__(self, other):
         return self.type_ == other.type_
@@ -302,8 +288,18 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
         if current.type_ == target:
             return current
 
-        for neighbor in pm.transformers.get(current.type_, []):
-            outstanding.insert(0, SearchNode(type_=neighbor, parent=current))
+        for neighbor, transform_record in pm.transformers.get(
+            current.type_, {}
+        ).items():
+            if transform_record.upgrade or current.steps == 0:
+                outstanding.insert(
+                    0, SearchNode(
+                        type_=neighbor,
+                        parent=current,
+                        record=transform_record,
+                        steps=current.steps+1
+                    )
+                )
 
         if issubclass(current.type_, model.base.FormatBase):
             # add synthetic link for Dx -> x
@@ -311,7 +307,9 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
                 neighbor = SearchNode(
                     type_=current.type_.file.format,
                     parent=current,
-                    transform_type=TransformType.unwrap
+                    record=current.record,
+                    transform_type=TransformType.unwrap,
+                    steps=current.steps
                 )
                 outstanding.insert(0, neighbor)
 
@@ -321,7 +319,9 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
                     neighbor = SearchNode(
                         type_=sfdf,
                         parent=current,
-                        transform_type=TransformType.wrap
+                        record=current.record,
+                        transform_type=TransformType.wrap,
+                        steps=current.steps
                     )
                     outstanding.insert(0, neighbor)
 

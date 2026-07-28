@@ -74,7 +74,7 @@ from rachis.core.cite import _make_citations_tuple
 
 
 TransformerRecord = collections.namedtuple(
-    'TransformerRecord', ['transformer', 'plugin', 'citations'])
+    'TransformerRecord', ['transformer', 'plugin', 'citations', 'upgrade'])
 SemanticTypeRecord = collections.namedtuple(
     'SemanticTypeRecord', ['semantic_type', 'plugin'])
 SemanticTypeFragmentRecord = collections.namedtuple(
@@ -341,10 +341,8 @@ class Plugin:
             return validator
         return decorator
 
-    def register_transformer(self, _fn=None, *, citations=None):
+    def register_transformer(self, _fn=None, *, citations=None, upgrade=False):
         """ **Decorator** which registers a transformer to convert data
-
-        This decorator may be used with or without arguments.
 
         Parameters
         ----------
@@ -354,7 +352,11 @@ class Plugin:
         citations : CitationRecord or list of CitationRecord
           Citation(s) to associate with a result whenever this transformer is
           used internally. Can also use an entire :py:class:`Citations` object.
-
+        upgrade : Bool
+            Whether to include this transformer when searching for paths
+            between transformers. This is decided based on whether the
+            transformer loses important information when converting from one
+            type to the other.
         Returns
         -------
         decorator
@@ -372,7 +374,7 @@ class Plugin:
 
         Examples
         --------
-        >>> @plugin.register_transformer
+        >>> @plugin.register_transformer(upgrade=True)
         ... def _0(data: pd.DataFrame) -> CSVFormat:
         ...     ff = CSVFormat()
         ...     with ff.open() as fh:
@@ -426,7 +428,11 @@ class Plugin:
                                 % (transformer, input, output))
 
             self.transformers[input, output] = TransformerRecord(
-                transformer=transformer, plugin=self, citations=citations)
+                transformer=transformer,
+                plugin=self,
+                citations=citations,
+                upgrade=upgrade
+            )
             return transformer
 
         if _fn is None:
