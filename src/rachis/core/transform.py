@@ -63,6 +63,15 @@ class ModelType:
             raise Exception("No transformation from %r to %r" %
                             (self._view_type, other._view_type))
 
+        if recorder is not None:
+            recorder(
+                target_node.record,
+                input_name=self._view_name,
+                input_record=self._record,
+                output_name=other._view_name,
+                output_record=other._record
+            )
+
         return compose_transformation(target_node)
 
     def _get_transformer_to(self, other):
@@ -328,7 +337,7 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
     return None
 
 
-def compose_transformation(target: SearchNode | None, recorder=None):
+def compose_transformation(target: SearchNode | None):
     if target is None:
         return None
 
@@ -339,14 +348,6 @@ def compose_transformation(target: SearchNode | None, recorder=None):
     while current is not None:
         steps.insert(0, current)
         current = current.parent
-
-    if recorder is not None:
-        if len(steps) == 1:
-            # todo (identity case)
-            pass
-        for step in steps:
-            # todo
-            pass
 
     if len(steps) == 1:
         def identity_transformation(view, validate_level='min'):
