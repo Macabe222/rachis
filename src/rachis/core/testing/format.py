@@ -191,3 +191,8 @@ class FourthStepFormat(model.DirectoryFormat):
     """
     A format for testing transitive transformers
     """
+
+class FifthStepFormat(model.DirectoryFormat):
+    """
+    A format for testing transitive transformers
+    """

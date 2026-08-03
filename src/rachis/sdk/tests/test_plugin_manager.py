@@ -36,7 +36,8 @@ from rachis.core.testing.format import (Cephalapod, IntSequenceDirectoryFormat,
                                         FirstStepFormat,
                                         SecondStepFormat,
                                         ThirdStepFormat,
-                                        FourthStepFormat
+                                        FourthStepFormat,
+                                        FifthStepFormat
 )
 
 from rachis.core.testing.validator import (validator_example_null1,
@@ -237,6 +238,9 @@ class TestPluginManager(unittest.TestCase):
                              plugin=self.plugin),
             'FourthStepFormat':
                 FormatRecord(format=FourthStepFormat,
+                             plugin=self.plugin),
+            'FifthStepFormat':
+                FormatRecord(format=FifthStepFormat,
                              plugin=self.plugin),
         }
 

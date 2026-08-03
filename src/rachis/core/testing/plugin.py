@@ -34,13 +34,14 @@ from .format import (
     FirstStepFormat,
     SecondStepFormat,
     ThirdStepFormat,
-    FourthStepFormat
+    FourthStepFormat,
+    FifthStepFormat,
 )
 
 from .type import (IntSequence1, IntSequence2, IntSequence3, Mapping, FourInts,
                    SingleInt, Kennel, Dog, Cat, C1, C2, C3, Foo, Bar, Baz,
                    AscIntSequence, Squid, Octopus, Cuttlefish, FirstStep,
-                   SecondStep, ThirdStep, FourthStep)
+                   SecondStep, ThirdStep, FourthStep, FifthStep)
 from .method import (concatenate_ints, split_ints, merge_mappings,
                      identity_with_metadata, identity_with_metadata_column,
                      identity_with_categorical_metadata_column,
@@ -126,7 +127,7 @@ dummy_plugin.register_formats(
     IntSequenceMultiFileDirectoryFormat, MappingDirectoryFormat,
     EchoDirectoryFormat, EchoFormat, Cephalapod, CephalapodDirectoryFormat,
     ImportableOnlyFormat, ExportableOnlyFormat, FirstStepFormat,
-    SecondStepFormat, ThirdStepFormat, FourthStepFormat
+    SecondStepFormat, ThirdStepFormat, FourthStepFormat, FifthStepFormat,
 )
 
 dummy_plugin.register_formats(
@@ -212,6 +213,12 @@ dummy_plugin.register_artifact_class(
     FourthStep,
     directory_format=FourthStepFormat,
     description="Fourth step"
+)
+
+dummy_plugin.register_artifact_class(
+    FifthStep,
+    directory_format=FifthStepFormat,
+    description="Fifth step"
 )
 
 dummy_plugin.register_semantic_type_to_format(

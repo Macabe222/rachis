@@ -341,7 +341,7 @@ class Plugin:
             return validator
         return decorator
 
-    def register_transformer(self, _fn=None, *, citations=None, upgrade=False):
+    def register_transformer(self, _fn=None, *, citations=None, upgrade=None):
         """ **Decorator** which registers a transformer to convert data
 
         Parameters
@@ -352,11 +352,17 @@ class Plugin:
         citations : CitationRecord or list of CitationRecord
           Citation(s) to associate with a result whenever this transformer is
           used internally. Can also use an entire :py:class:`Citations` object.
-        upgrade : Bool
+        upgrade : Bool | None
             Whether to include this transformer when searching for paths
             between transformers. This is decided based on whether the
             transformer loses important information when converting from one
             type to the other.
+            True: Transformer does not loose infromationa and should be
+                  included in searches.
+            False: Transformer does loose information but can still be used in
+                   searches as a fall back option.
+            None: Transformer looses too much information and cannot be used in
+                  searches. This is the default.
         Returns
         -------
         decorator

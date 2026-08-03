@@ -63,16 +63,16 @@ class ModelType:
             raise Exception("No transformation from %r to %r" %
                             (self._view_type, other._view_type))
 
-        if recorder is not None:
-            recorder(
-                target_node.record,
-                input_name=self._view_name,
-                input_record=self._record,
-                output_name=other._view_name,
-                output_record=other._record
-            )
+        # if recorder is not None:
+        #     recorder(
+        #         target_node.record,
+        #         input_name=self._view_name,
+        #         input_record=self._record,
+        #         output_name=other._view_name,
+        #         output_record=other._record
+        #     )
 
-        return compose_transformation(target_node)
+        return compose_transformation(target_node, recorder=recorder)
 
     def _get_transformer_to(self, other):
         transformer, record = self._lookup_transformer(self._view_type,
@@ -242,13 +242,15 @@ class SearchNode:
         parent: SearchNode | None,
         record = None,
         transform_type: TransformType = TransformType.registered,
-        steps = 0
+        steps = 0,
+        wrapped = False
     ):
         self.type_ = type_
         self.parent = parent
         self.record = record
         self.transform_type = transform_type
         self.steps = steps
+        self.wrapped = wrapped
 
     def __eq__(self, other):
         return self.type_ == other.type_
@@ -262,6 +264,55 @@ class SearchNode:
             f'parent={None if self.parent is None else id(self.parent)}, '
             f'transform_type={self.transform_type})'
         )
+
+
+def insert_neighbors(
+    node: SearchNode, outstanding: list[SearchNode], allow_lossy: bool = False
+):
+    pm = sdk.PluginManager()
+
+    for neighbor, transform_record in pm.transformers.get(
+        node.type_, {}
+    ).items():
+        allowed = (
+            transform_record.upgrade is not None if allow_lossy
+            else transform_record.upgrade
+        )
+        if allowed or node.steps == 0:
+            outstanding.insert(
+                0, SearchNode(
+                    type_=neighbor,
+                    parent=node,
+                    record=transform_record,
+                    steps=node.steps+1
+                )
+            )
+
+    if issubclass(node.type_, model.base.FormatBase):
+        # add synthetic link for Dx -> x
+        if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
+            neighbor = SearchNode(
+                type_=node.type_.file.format,
+                parent=node,
+                record=None,
+                transform_type=TransformType.unwrap,
+                steps=node.steps,
+            )
+            node.wrapped = True
+            outstanding.insert(0, neighbor)
+
+        # add synthetic link(s) x -> Dx
+        else:
+            for sfdf in pm._ff_to_sfdf.get(node.type_, []):
+                neighbor = SearchNode(
+                    type_=sfdf,
+                    parent=node,
+                    record=None,
+                    transform_type=TransformType.wrap,
+                    steps=node.steps
+                )
+                node.wrapped = True
+                outstanding.insert(0, neighbor)
 
 
 def find_transformation_path(start: type, target: type) -> SearchNode | None:
@@ -281,63 +332,42 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
     SearchNode | None
         A SearchNode of the target type, if reachable, otherwise None.
     '''
-    pm = sdk.PluginManager()
-
     visited: set[SearchNode] = set()
+    lossy_visited: set[SearchNode] = set()
     current = SearchNode(type_=start, parent=None)
     outstanding: list[SearchNode] = [current]
-    while outstanding != []:
-        current = outstanding.pop()
+    lossy_outstanding: list[SearchNode] = [current]
+    lossy_found = None
 
-        if current in visited:
+    while outstanding or lossy_outstanding:
+        current = outstanding.pop() if outstanding else None
+        lossy_current = lossy_outstanding.pop() if lossy_outstanding else None
+
+        if current in visited and lossy_current in lossy_visited:
             continue
-        else:
+        if current is not None:
             visited.add(current)
+        if lossy_current is not None:
+            lossy_visited.add(lossy_current)
 
-        if current.type_ == target:
-            return current
+        if current is not None:
+            if current.type_ == target:
+                return current
+        if lossy_current is not None:
+            if lossy_current.type_ == target:
+                lossy_found =  lossy_current
 
-        for neighbor, transform_record in pm.transformers.get(
-            current.type_, {}
-        ).items():
-            if transform_record.upgrade or current.steps == 0:
-                outstanding.insert(
-                    0, SearchNode(
-                        type_=neighbor,
-                        parent=current,
-                        record=transform_record,
-                        steps=current.steps+1
-                    )
-                )
+        if current is not None:
+            insert_neighbors(current, outstanding)
+        if lossy_current is not None:
+            insert_neighbors(
+                lossy_current, lossy_outstanding, allow_lossy=True
+            )
 
-        if issubclass(current.type_, model.base.FormatBase):
-            # add synthetic link for Dx -> x
-            if issubclass(current.type_, model.SingleFileDirectoryFormatBase):
-                neighbor = SearchNode(
-                    type_=current.type_.file.format,
-                    parent=current,
-                    record=current.record,
-                    transform_type=TransformType.unwrap,
-                    steps=current.steps
-                )
-                outstanding.insert(0, neighbor)
-
-            # add synthetic link(s) x -> Dx
-            else:
-                for sfdf in pm._ff_to_sfdf.get(current.type_, []):
-                    neighbor = SearchNode(
-                        type_=sfdf,
-                        parent=current,
-                        record=current.record,
-                        transform_type=TransformType.wrap,
-                        steps=current.steps
-                    )
-                    outstanding.insert(0, neighbor)
-
-    return None
+    return lossy_found
 
 
-def compose_transformation(target: SearchNode | None):
+def compose_transformation(target: SearchNode | None, recorder = None):
     if target is None:
         return None
 
@@ -348,6 +378,36 @@ def compose_transformation(target: SearchNode | None):
     while current is not None:
         steps.insert(0, current)
         current = current.parent
+
+    if recorder is not None:
+        for i in range(len(steps) - 1):
+            name  = util.get_view_name(steps[i].type_)
+            view = pm.views.get(name)
+            if steps[i].wrapped:
+                continue
+            elif steps[i + 1].wrapped:
+                try:
+                    parent_name = util.get_view_name(steps[i + 2].type_)
+                    parent_view = pm.views.get(parent_name)
+                    recorder(
+                        steps[i + 1].record,
+                        name,
+                        view,
+                        parent_name,
+                        parent_view
+                    )
+                except IndexError:
+                    pass
+            else:
+                parent_name = util.get_view_name(steps[i + 1].type_)
+                parent_view = pm.views.get(parent_name)
+                recorder(
+                    steps[i + 1].record,
+                    name,
+                    view,
+                    parent_name,
+                    parent_view
+                )
 
     if len(steps) == 1:
         def identity_transformation(view, validate_level='min'):

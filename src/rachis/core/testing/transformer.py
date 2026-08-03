@@ -27,7 +27,8 @@ from .format import (
     FirstStepFormat,
     SecondStepFormat,
     ThirdStepFormat,
-    FourthStepFormat
+    FourthStepFormat,
+    FifthStepFormat,
 )
 from .plugin import dummy_plugin, citations
 
@@ -228,3 +229,9 @@ def _6001(data: SecondStepFormat) -> ThirdStepFormat:
 @dummy_plugin.register_transformer
 def _6002(data: ThirdStepFormat) -> FourthStepFormat:
     return FourthStepFormat()
+
+
+# only for testing transitive transformers
+@dummy_plugin.register_transformer(upgrade=False)
+def _6003(data: ThirdStepFormat) -> FifthStepFormat:
+    return FifthStepFormat()
