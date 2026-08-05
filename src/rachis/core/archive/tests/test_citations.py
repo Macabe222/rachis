@@ -16,7 +16,6 @@ from rachis.core.testing.util import get_dummy_plugin
 class TestCitationsTracked(unittest.TestCase):
     def setUp(self):
         self.plugin = get_dummy_plugin()
-        self.maxDiff = None
 
     def test_import(self):
         data = rachis.Artifact.import_data(IntSequence1, [1, 2, 3, 4])

@@ -63,15 +63,6 @@ class ModelType:
             raise Exception("No transformation from %r to %r" %
                             (self._view_type, other._view_type))
 
-        # if recorder is not None:
-        #     recorder(
-        #         target_node.record,
-        #         input_name=self._view_name,
-        #         input_record=self._record,
-        #         output_name=other._view_name,
-        #         output_record=other._record
-        #     )
-
         return compose_transformation(target_node, recorder=recorder)
 
     def _get_transformer_to(self, other):
