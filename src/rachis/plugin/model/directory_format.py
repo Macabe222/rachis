@@ -182,12 +182,13 @@ class DirectoryFormat(FormatBase, metaclass=_DirectoryMeta):
             if value is None:
                 raise ValidationError("Unrecognized file (%s) for %s."
                                       % (path, self.__class__.__name__))
-            if os.path.getsize(path) == 0 and len(collected_paths) == 1:
-               warnings.warn(
-                   f'Format {self.__class__.__name__} consists of one empty '
-                   'file.',
-                   RachisWarning
-               )
+            if (os.path.getsize(path) == 0 and len(collected_paths) == 1
+                and not self.allow_empty):
+                warnings.warn(
+                    f'Format {self.__class__.__name__} consists of one empty '
+                    'file.',
+                    RachisWarning
+                )
         if hasattr(self, '_validate_'):
             try:
                 self._validate_(level)
@@ -219,12 +220,18 @@ class SingleFileDirectoryFormatBase(DirectoryFormat):
             )
 
 
-def SingleFileDirectoryFormat(name, pathspec, format):
+def SingleFileDirectoryFormat(name, pathspec, format, allow_empty=False):
     # TODO: do the same hack namedtuple does so we don't mangle globals
     # (arguably the code is going to be broken if defined dynamically anyways,
     # but better to find that out later than writing in the module namespace
     # even if it isn't called module-level [which is must be!])
-    df = type(name, (SingleFileDirectoryFormatBase,),
-              {'file': File(pathspec, format=format)})
+    attributes = {'file': File(pathspec, format=format)}
+    if allow_empty:
+        def init(self, path=None, mode='w'):
+            SingleFileDirectoryFormatBase.__init__(self, path, mode, True)
+
+        attributes['__init__'] = init
+
+    df = type(name, (SingleFileDirectoryFormatBase,), attributes)
     df.__module__ = sys._getframe(1).f_globals.get('__name__', '__main__')
     return df
