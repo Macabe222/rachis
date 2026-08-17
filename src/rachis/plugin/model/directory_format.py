@@ -182,11 +182,10 @@ class DirectoryFormat(FormatBase, metaclass=_DirectoryMeta):
             if value is None:
                 raise ValidationError("Unrecognized file (%s) for %s."
                                       % (path, self.__class__.__name__))
-            if (os.path.getsize(path) == 0 and len(collected_paths) == 1
-                and not self.allow_empty):
+            if (os.path.getsize(path) == 0 and not self.allow_empty):
                 warnings.warn(
-                    f'Format {self.__class__.__name__} consists of one empty '
-                    'file.',
+                    f'Format {self.__class__.__name__} contains of one or '
+                    'more empty files.',
                     RachisWarning
                 )
         if hasattr(self, '_validate_'):
