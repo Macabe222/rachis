@@ -1925,6 +1925,7 @@ class Pool:
                 alias = self.cache.process_pool._alias(_uuid)
                 self.cache.process_pool._make_symlink(_uuid, alias)
 
+                # Get action.yaml from this artifact's provenance
                 path = self.cache.data / _uuid
                 action_yaml = load_action_yaml(path)
                 action = action_yaml['action']
