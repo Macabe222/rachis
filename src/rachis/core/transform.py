@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from enum import Enum
 import pathlib
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from rachis.plugin.plugin import TransformerRecord
 
 from rachis import sdk
 from rachis.plugin import model
@@ -257,7 +260,7 @@ class SearchNode:
         self,
         type_: type,
         parent: SearchNode | None,
-        record: 'TransformerRecord' | None = None,
+        record: TransformerRecord | None = None,
         transform_type: TransformType = TransformType.registered,
         wrapped: bool = False
     ):
@@ -299,10 +302,23 @@ class SearchNode:
         return length
 
     def __eq__(self, other):
-        return self.type_ == other.type_
+        '''
+        Two `SearchNode`s should compare equal if they represent the same
+        type (vertex in the graph) and if they same class of path history.
+
+        The second part keeps the search from short-circuiting when a node
+        is reached in an alternate way, which is desirable because it may be
+        the case that the alternate path is viable and the original one isn't.
+        (Due to the inclusion of `upgrade=None` in the original but not in the
+        alternate, for example.)
+        '''
+        return (
+            self.type_ == other.type_
+            and self.classify() == other.classify()
+        )
 
     def __hash__(self):
-        return hash(self.type_)
+        return hash((self.type_, self.classify()))
 
     def __repr__(self):
         return (
@@ -310,6 +326,60 @@ class SearchNode:
             f'parent={None if self.parent is None else id(self.parent)}, '
             f'transform_type={self.transform_type})'
         )
+
+    def classify(self) -> PathType:
+        '''
+        Classify the path encoded in a `SearchNode` as one of `PathType`.
+        '''
+        status = PathType.upgrade_only
+        node = self
+        while node is not None:
+            if node.record is not None and node.record.upgrade is False:
+                status = PathType.includes_false
+            elif node.record is not None and node.record.upgrade is None:
+                status = PathType.includes_none
+                return status
+
+            node = node.parent
+
+        return status
+
+    def validate_path(self) -> bool:
+        '''
+        Validates the transformation path encoded in the chain of parents.
+        Ensures that there is at most one `upgrade=None` transformation step
+        which, if present, occurs at one of the ends of the path. Implicit
+        transformations (defined elsewhere) are not considered when determining
+        the ends of the path.
+
+        Accounting for `None`s is done separately here because it is
+        impractical to look ahead or look backwards when managing the queue in
+        `NodeQueue`.
+
+        Returns
+        -------
+        bool
+            Whether the path is valid.
+        '''
+        steps = []
+        node = self
+        while node is not None:
+            steps.insert(0, node)
+            node = node.parent
+
+        explicit_steps = [n for n in steps if n.record is not None]
+
+        none_count = 0
+        for i, n in enumerate(explicit_steps):
+            if n.record.upgrade is None:
+                none_count += 1
+                if i not in {0, len(explicit_steps) - 1}:
+                    return False
+
+        if none_count > 1:
+            return False
+
+        return True
 
 
 class NodeQueue:
@@ -320,28 +390,15 @@ class NodeQueue:
         '''
         Inserts a node and resorts the queue.
 
-        The queue is ordered according to the following algorithm. A
-        transformer falls into one of three categories:
-            - implicit transformers (wrap/unwrap transformations to and from
-              file formats and single file directory formats)
-            - explicit transformers that are marked `upgrade=True`
-            - explicit transformers that are marked `upgrade=False` or
-              `upgrade=None`
-
-        The preference is in the order listed above, with the following
-        justification. Implicit transformers are the most likely to initiate
-        or complete the transformation path as we often begin and end with
-        file formats or single file directory formats. Transformers marked
-        `upgrade=True` are non-lossy and can be chained indefinitely.
-        Transformers marked `upgrade=False` or `upgrade=None` are lossy and
-        should be used only as a last resort.
-
-        Within each category, paths that are shorter are preferred.
+        The queue is sorted primarily by `PathType` and secondarily by
+        path length. In both cases lower values are preferred. This ensures
+        that `upgrade=True`-only paths are exhausted before including
+        `upgrade=False` steps, and so on.
         '''
         self.nodes.append(node)
 
         def primary(node):
-            return int(self.classify_node(node).value)
+            return int(node.classify().value)
 
         def secondary(node):
             return len(node)
@@ -354,73 +411,56 @@ class NodeQueue:
 
         return self.nodes.pop()
 
-    def classify_node(self, node: SearchNode) -> PathType:
+    def insert_neighbors(self, node: SearchNode) -> None:
         '''
-        Classify the path encoded in a `SearchNode` as one of `PathType`.
+        Find explicit and implicit neighbors to `node` and add them to the
+        queue.
+
+        Parameters
+        ----------
+        node : SearchNode
+            The node the neighbors of which should be added.
+        node_queue : NodeQueue
+            The remaining nodes to search while finding a transformation path.
+            Neighbors are pushed into this queue.
         '''
-        status = PathType.upgrade_only
-        while node is not None:
-            if node.record is not None and node.record.upgrade is False:
-                status = PathType.includes_false
-            elif node.record is not None and node.record.upgrade is None:
-                status = PathType.includes_none
-                return status
+        pm = sdk.PluginManager()
 
-            node = node.parent
-
-        return status
-
-
-def insert_neighbors(node: SearchNode, node_queue: NodeQueue) -> None:
-    '''
-    Find explicit and implicit neighbors to `node` and add them to
-    `node_queue`.
-
-    Parameters
-    ----------
-    node : SearchNode
-        The node the neighbors of which should be added.
-    node_queue : NodeQueue
-        The remaining nodes to search while finding a transformation path.
-        Neighbors are pushed into this queue.
-    '''
-    pm = sdk.PluginManager()
-
-    # explicit neighbors
-    for neighbor, transform_record in pm.transformers.get(
-        node.type_, {}
-    ).items():
-        neighbor_node = SearchNode(
-            type_=neighbor,
-            parent=node,
-            record=transform_record,
-        )
-        node_queue.push(neighbor_node)
-
-    # implicit neighbors
-    if issubclass(node.type_, model.base.FormatBase):
-        # add synthetic link for Dx -> x
-        if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
-            neighbor = SearchNode(
-                type_=node.type_.file.format,
+        # explicit neighbors
+        for neighbor, transform_record in pm.transformers.get(
+            node.type_, {}
+        ).items():
+            neighbor_node = SearchNode(
+                type_=neighbor,
                 parent=node,
-                record=None,
-                transform_type=TransformType.unwrap,
+                record=transform_record,
             )
-            node.wrapped = True
-            node_queue.push(neighbor)
+            self.push(neighbor_node)
 
-        # add synthetic link(s) x -> Dx
-        else:
-            for sfdf in pm._ff_to_sfdf.get(node.type_, []):
+        # implicit neighbors
+        if issubclass(node.type_, model.base.FormatBase):
+            # add synthetic link for Dx -> x
+            if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
                 neighbor = SearchNode(
-                    type_=sfdf,
+                    type_=node.type_.file.format,
                     parent=node,
                     record=None,
-                    transform_type=TransformType.wrap,
+                    transform_type=TransformType.unwrap,
                 )
                 node.wrapped = True
-                node_queue.push(neighbor)
+                self.push(neighbor)
+
+            # add synthetic link(s) x -> Dx
+            else:
+                for sfdf in pm._ff_to_sfdf.get(node.type_, []):
+                    neighbor = SearchNode(
+                        type_=sfdf,
+                        parent=node,
+                        record=None,
+                        transform_type=TransformType.wrap,
+                    )
+                    node.wrapped = True
+                    self.push(neighbor)
 
 
 def find_transformation_path(start: type, target: type) -> SearchNode | None:
@@ -455,10 +495,13 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
             continue
 
         if current.type_ == target:
-            return current
+            if current.validate_path():
+                return current
+            else:
+                continue
 
         visited.add(current)
-        insert_neighbors(current, node_queue)
+        node_queue.insert_neighbors(current)
 
 
 def compose_transformation(target: SearchNode | None, recorder = None):
