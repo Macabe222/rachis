@@ -463,32 +463,30 @@ class NodeQueue:
             if not node.has_ancestor(neighbor):
                 self.push(neighbor)
 
-        # implicit neighbors
-        if issubclass(node.type_, model.base.FormatBase):
-            # add synthetic link for Dx -> x
-            if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
+        # add synthetic link for Dx -> x
+        if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
+            neighbor = SearchNode(
+                type_=node.type_.file.format,
+                parent=node,
+                record=None,
+                transform_type=TransformType.unwrap,
+            )
+            node.wrapped = True
+            if not node.has_ancestor(neighbor):
+                self.push(neighbor)
+
+        # add synthetic link(s) x -> Dx
+        elif issubclass(node.type_, model.base.FormatBase):
+            for sfdf in pm._ff_to_sfdf.get(node.type_, []):
                 neighbor = SearchNode(
-                    type_=node.type_.file.format,
+                    type_=sfdf,
                     parent=node,
                     record=None,
-                    transform_type=TransformType.unwrap,
+                    transform_type=TransformType.wrap,
                 )
                 node.wrapped = True
                 if not node.has_ancestor(neighbor):
                     self.push(neighbor)
-
-            # add synthetic link(s) x -> Dx
-            else:
-                for sfdf in pm._ff_to_sfdf.get(node.type_, []):
-                    neighbor = SearchNode(
-                        type_=sfdf,
-                        parent=node,
-                        record=None,
-                        transform_type=TransformType.wrap,
-                    )
-                    node.wrapped = True
-                    if not node.has_ancestor(neighbor):
-                        self.push(neighbor)
 
 
 def find_transformation_path(start: type, target: type) -> SearchNode | None:
