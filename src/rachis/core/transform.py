@@ -301,25 +301,6 @@ class SearchNode:
 
         return length
 
-    def __eq__(self, other):
-        '''
-        Two `SearchNode`s should compare equal if they represent the same
-        type (vertex in the graph) and if they same class of path history.
-
-        The second part keeps the search from short-circuiting when a node
-        is reached in an alternate way, which is desirable because it may be
-        the case that the alternate path is viable and the original one isn't.
-        (Due to the inclusion of `upgrade=None` in the original but not in the
-        alternate, for example.)
-        '''
-        return (
-            self.type_ == other.type_
-            and self.classify() == other.classify()
-        )
-
-    def __hash__(self):
-        return hash((self.type_, self.classify()))
-
     def __repr__(self):
         return (
             f'SearchNode(id={id(self)}, type_={repr(self.type_)}, '
@@ -361,14 +342,7 @@ class SearchNode:
         bool
             Whether the path is valid.
         '''
-        steps = []
-        node = self
-        while node is not None:
-            steps.insert(0, node)
-            node = node.parent
-
-        explicit_steps = [n for n in steps if n.record is not None]
-
+        explicit_steps = self.steps(explicit=True)
         none_count = 0
         for i, n in enumerate(explicit_steps):
             if n.record.upgrade is None:
@@ -380,6 +354,57 @@ class SearchNode:
             return False
 
         return True
+
+    def steps(self, explicit=False) -> list[SearchNode]:
+        '''
+        Converts the ancestors of self into a list of `SearchNodes`s.
+
+        Parameters
+        ----------
+        explicit : bool
+            Whether to include only explicit transformation steps (i.e. those
+            that are registered).
+
+        Returns
+        -------
+        list[SearchNode]
+            The `SearchNode` ancestry.
+        '''
+        steps = []
+        node = self
+        while node is not None:
+            steps.insert(0, node)
+            node = node.parent
+
+        if explicit:
+            return [n for n in steps if n.record is not None]
+
+        return steps
+
+    def has_ancestor(self, node: SearchNode) -> bool:
+        '''
+        Searches for the type of `node` among the ancestors of `self`. Used to
+        prevent cycles during the transformation path search.
+
+        Paremeters
+        ----------
+        node : SearchNode
+            The node the type of which will be searched for among ancestors of
+            `self`.
+
+        Returns
+        -------
+        bool
+            Whether a matching ancestor exists.
+        '''
+        current = self
+        while current is not None:
+            if current.type_ == node.type_:
+                return True
+
+            current = current.parent
+
+        return False
 
 
 class NodeQueue:
@@ -430,12 +455,13 @@ class NodeQueue:
         for neighbor, transform_record in pm.transformers.get(
             node.type_, {}
         ).items():
-            neighbor_node = SearchNode(
+            neighbor = SearchNode(
                 type_=neighbor,
                 parent=node,
                 record=transform_record,
             )
-            self.push(neighbor_node)
+            if not node.has_ancestor(neighbor):
+                self.push(neighbor)
 
         # implicit neighbors
         if issubclass(node.type_, model.base.FormatBase):
@@ -448,7 +474,8 @@ class NodeQueue:
                     transform_type=TransformType.unwrap,
                 )
                 node.wrapped = True
-                self.push(neighbor)
+                if not node.has_ancestor(neighbor):
+                    self.push(neighbor)
 
             # add synthetic link(s) x -> Dx
             else:
@@ -460,7 +487,8 @@ class NodeQueue:
                         transform_type=TransformType.wrap,
                     )
                     node.wrapped = True
-                    self.push(neighbor)
+                    if not node.has_ancestor(neighbor):
+                        self.push(neighbor)
 
 
 def find_transformation_path(start: type, target: type) -> SearchNode | None:
@@ -481,7 +509,6 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
         A SearchNode of the target type, if reachable, otherwise None.
     '''
     current = SearchNode(type_=start, parent=None)
-    visited: set[SearchNode] = set()
 
     node_queue = NodeQueue()
     node_queue.push(current)
@@ -491,16 +518,12 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
         if current is None:
             return None
 
-        if current in visited:
+        if not current.validate_path():
             continue
 
         if current.type_ == target:
-            if current.validate_path():
-                return current
-            else:
-                continue
+            return current
 
-        visited.add(current)
         node_queue.insert_neighbors(current)
 
 
@@ -510,11 +533,7 @@ def compose_transformation(target: SearchNode | None, recorder = None):
 
     pm = sdk.PluginManager()
 
-    steps = []
-    current = target
-    while current is not None:
-        steps.insert(0, current)
-        current = current.parent
+    steps = target.steps()
 
     if recorder is not None:
         for i in range(len(steps) - 1):
