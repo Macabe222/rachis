@@ -353,16 +353,20 @@ class Plugin:
           Citation(s) to associate with a result whenever this transformer is
           used internally. Can also use an entire :py:class:`Citations` object.
         upgrade : Bool | None
-            Whether to include this transformer when searching for paths
-            between transformers. This is decided based on whether the
-            transformer loses important information when converting from one
-            type to the other.
-            True: Transformer does not loose infromationa and should be
-                  included in searches.
-            False: Transformer does loose information but can still be used in
-                   searches as a fall back option.
-            None: Transformer looses too much information and cannot be used in
-                  searches. This is the default.
+            How to consider this transformer when searching for transformation
+            paths between formats. There are three options:
+
+            `True` indicates that the transformer is not lossy, is usable at
+            any step in transformer search paths, and takes precedence over
+            `False`.
+
+            `False` indicates that the transformer is lossy but can be used in
+            transformer search paths only if there are no other satisfactory
+            paths that include only `upgrade=True` transformers.
+
+            None indicates that the transformer is lossy and can be used only
+            at the terminal ends of search paths. This is the default.
+
         Returns
         -------
         decorator

@@ -221,9 +221,35 @@ class ObjectType(ModelType):
 
 
 class TransformType(Enum):
+    '''
+    Annotates a `SearchNode` as being transformed from its parent in one of
+    three ways:
+
+    - `registered` means that the transformation was a typical, registered
+      transformer
+    - `wrap` means that the transformation converts a `FormatBase` into a
+      `SingleFileDirectoryFormatBase`
+    - `unwrap` type means that the transformation converts a
+      `SingleFileDirectoryFormatBase` into a `FormatBase`
+    '''
     registered = 1
     wrap = 2
     unwrap = 3
+
+
+class PathType(Enum):
+    '''
+    Annotates the path encoded in a `SearchNode` as belonging to one of three
+    categories:
+        - upgrade_only: only implicit and `upgrade=True` transformations
+        - includes_false: implicit, `upgrade=True`, and `upgrade=False`
+          transformations
+        - includes_none: implicit, `upgrade=True`, `upgrade=False` and
+          `upgrade=None` transformations
+    '''
+    upgrade_only = 1
+    includes_false = 2
+    includes_none = 3
 
 
 class SearchNode:
@@ -231,17 +257,46 @@ class SearchNode:
         self,
         type_: type,
         parent: SearchNode | None,
-        record = None,
+        record: 'TransformerRecord' | None = None,
         transform_type: TransformType = TransformType.registered,
-        steps = 0,
-        wrapped = False
+        wrapped: bool = False
     ):
+        '''
+        Parameters
+        ----------
+        type_ : type
+            The type of the node.
+        parent : SearchNode | None
+            The node from which this node has been transformed, or None if this
+            is the first node in the path.
+        record : TransformerRecord | None
+            The `TransformerRecord` as registered in `Plugin.transformers` when
+            the transformation from parent to self was registered, or None for
+            wrap/unwrap transformations.
+        transform_type : TransformType
+            See `TransformType`.
+        wrapped : bool
+
+        '''
         self.type_ = type_
         self.parent = parent
         self.record = record
         self.transform_type = transform_type
-        self.steps = steps
         self.wrapped = wrapped
+
+    def __len__(self):
+        '''
+        Returns the number of registered transformers up to this node.
+        '''
+        length = 0
+        n = self
+        while n.parent is not None:
+            if n.record is not None:
+                length += 1
+
+            n = n.parent
+
+        return length
 
     def __eq__(self, other):
         return self.type_ == other.type_
@@ -257,28 +312,92 @@ class SearchNode:
         )
 
 
-def insert_neighbors(
-    node: SearchNode, outstanding: list[SearchNode], allow_lossy: bool = False
-):
+class NodeQueue:
+    def __init__(self):
+            self.nodes = []
+
+    def push(self, node: SearchNode) -> None:
+        '''
+        Inserts a node and resorts the queue.
+
+        The queue is ordered according to the following algorithm. A
+        transformer falls into one of three categories:
+            - implicit transformers (wrap/unwrap transformations to and from
+              file formats and single file directory formats)
+            - explicit transformers that are marked `upgrade=True`
+            - explicit transformers that are marked `upgrade=False` or
+              `upgrade=None`
+
+        The preference is in the order listed above, with the following
+        justification. Implicit transformers are the most likely to initiate
+        or complete the transformation path as we often begin and end with
+        file formats or single file directory formats. Transformers marked
+        `upgrade=True` are non-lossy and can be chained indefinitely.
+        Transformers marked `upgrade=False` or `upgrade=None` are lossy and
+        should be used only as a last resort.
+
+        Within each category, paths that are shorter are preferred.
+        '''
+        self.nodes.append(node)
+
+        def primary(node):
+            return int(self.classify_node(node).value)
+
+        def secondary(node):
+            return len(node)
+
+        self.nodes.sort(key=lambda n: (primary(n), secondary(n)), reverse=True)
+
+    def pop(self) -> SearchNode | None:
+        if not self.nodes:
+            return None
+
+        return self.nodes.pop()
+
+    def classify_node(self, node: SearchNode) -> PathType:
+        '''
+        Classify the path encoded in a `SearchNode` as one of `PathType`.
+        '''
+        status = PathType.upgrade_only
+        while node is not None:
+            if node.record is not None and node.record.upgrade is False:
+                status = PathType.includes_false
+            elif node.record is not None and node.record.upgrade is None:
+                status = PathType.includes_none
+                return status
+
+            node = node.parent
+
+        return status
+
+
+def insert_neighbors(node: SearchNode, node_queue: NodeQueue) -> None:
+    '''
+    Find explicit and implicit neighbors to `node` and add them to
+    `node_queue`.
+
+    Parameters
+    ----------
+    node : SearchNode
+        The node the neighbors of which should be added.
+    node_queue : NodeQueue
+        The remaining nodes to search while finding a transformation path.
+        Neighbors are pushed into this queue.
+    '''
     pm = sdk.PluginManager()
 
+    # explicit neighbors
     for neighbor, transform_record in pm.transformers.get(
         node.type_, {}
     ).items():
-        allowed = (
-            transform_record.upgrade is not None if allow_lossy
-            else transform_record.upgrade
+        neighbor_node = SearchNode(
+            type_=neighbor,
+            parent=node,
+            record=transform_record,
         )
-        if allowed or node.steps == 0:
-            outstanding.insert(
-                0, SearchNode(
-                    type_=neighbor,
-                    parent=node,
-                    record=transform_record,
-                    steps=node.steps+1
-                )
-            )
+        node_queue.push(neighbor_node)
 
+    # implicit neighbors
     if issubclass(node.type_, model.base.FormatBase):
         # add synthetic link for Dx -> x
         if issubclass(node.type_, model.SingleFileDirectoryFormatBase):
@@ -287,10 +406,9 @@ def insert_neighbors(
                 parent=node,
                 record=None,
                 transform_type=TransformType.unwrap,
-                steps=node.steps,
             )
             node.wrapped = True
-            outstanding.insert(0, neighbor)
+            node_queue.push(neighbor)
 
         # add synthetic link(s) x -> Dx
         else:
@@ -300,16 +418,15 @@ def insert_neighbors(
                     parent=node,
                     record=None,
                     transform_type=TransformType.wrap,
-                    steps=node.steps
                 )
                 node.wrapped = True
-                outstanding.insert(0, neighbor)
+                node_queue.push(neighbor)
 
 
 def find_transformation_path(start: type, target: type) -> SearchNode | None:
     '''
     Searches for a transformation path from `start` to `target`. The path is
-    encoded in the chain of parents of the returned SearchNode.
+    encoded in the chain of parents of the returned `SearchNode`.
 
     Parameters
     ----------
@@ -323,39 +440,25 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
     SearchNode | None
         A SearchNode of the target type, if reachable, otherwise None.
     '''
-    visited: set[SearchNode] = set()
-    lossy_visited: set[SearchNode] = set()
     current = SearchNode(type_=start, parent=None)
-    outstanding: list[SearchNode] = [current]
-    lossy_outstanding: list[SearchNode] = [current]
-    lossy_found = None
+    visited: set[SearchNode] = set()
 
-    while outstanding or lossy_outstanding:
-        current = outstanding.pop() if outstanding else None
-        lossy_current = lossy_outstanding.pop() if lossy_outstanding else None
+    node_queue = NodeQueue()
+    node_queue.push(current)
+    while True:
+        current = node_queue.pop()
 
-        if current in visited and lossy_current in lossy_visited:
+        if current is None:
+            return None
+
+        if current in visited:
             continue
-        if current is not None:
-            visited.add(current)
-        if lossy_current is not None:
-            lossy_visited.add(lossy_current)
 
-        if current is not None:
-            if current.type_ == target:
-                return current
-        if lossy_current is not None:
-            if lossy_current.type_ == target:
-                lossy_found =  lossy_current
+        if current.type_ == target:
+            return current
 
-        if current is not None:
-            insert_neighbors(current, outstanding)
-        if lossy_current is not None:
-            insert_neighbors(
-                lossy_current, lossy_outstanding, allow_lossy=True
-            )
-
-    return lossy_found
+        visited.add(current)
+        insert_neighbors(current, node_queue)
 
 
 def compose_transformation(target: SearchNode | None, recorder = None):
