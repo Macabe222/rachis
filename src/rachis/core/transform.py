@@ -401,7 +401,7 @@ def find_transformation_path(start: type, target: type) -> SearchNode | None:
 
 
 def compose_transformation(
-    target: SearchNode | None,
+    target: SearchNode,
     recorder: Callable | None = None,
 ) -> Callable:
     '''
@@ -410,9 +410,9 @@ def compose_transformation(
 
     Parameters
     ----------
-    target : SearchNode | None
+    target : SearchNode
         The type that we wish to transform to. The transformation path is
-        encoded in its ancestors. None if no transformation path was found.
+        encoded in its ancestors.
     recorder : Callable | None
         The transformation provenance recording function. None if caller does
         not care about provenance, e.g. `Artifact.view`.
@@ -422,9 +422,6 @@ def compose_transformation(
     Callable
         The composed transformer closure.
     '''
-    if target is None:
-        return None
-
     pm = sdk.PluginManager()
 
     steps = target.steps()
