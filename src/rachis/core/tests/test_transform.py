@@ -777,10 +777,10 @@ class TestTransformationComposition(unittest.TestCase):
         The registered transformer creates a new, framework-owned directory
         which the unwrap step then aliases.
 
-        Used in tests catching a regression on the unwrapping step where the
-        directory containing the unwrapped file was being destroyed after the
-        unwrapping step completed, leaving the unwrapped file with a dangling
-        path.
+        Used in tests catching a regression on the combination of a registered
+        transformer followed by an unwrapping step where the directory
+        containing the unwrapped file was being destroyed after the registered
+        transformer returned, leaving the unwrapped file with a dangling path.
         '''
         def tuple_to_directory(view):
             directory = IntSequenceDirectoryFormat()
@@ -810,9 +810,9 @@ class TestTransformationComposition(unittest.TestCase):
         while a subsequent step reads the file unwrapped from it.
 
         Catches a regression where the directory format was being destroyed
-        after unwrapping (all references to the backing OutPath were gone, so
-        the OutPath was destroyed), leaving the unwrapped file format with a
-        dangling path.
+        after the registered transformer returned (all references to the
+        backing OutPath were gone, so the OutPath was destroyed), leaving the
+        unwrapped file format with a dangling path.
         '''
         def file_to_list(view):
             with view.open() as fh:
@@ -836,9 +836,9 @@ class TestTransformationComposition(unittest.TestCase):
         transformation returns.
 
         Catches a regression where the directory format was being destroyed
-        after unwrapping (all references to the backing OutPath were gone, so
-        the OutPath was destroyed), leaving the unwrapped file format with a
-        dangling path.
+        after the registered transformer returned (all references to the
+        backing OutPath were gone, so the OutPath was destroyed), leaving the
+        unwrapped file format with a dangling path.
         '''
         node = self._registered_then_unwrap_path()
 
