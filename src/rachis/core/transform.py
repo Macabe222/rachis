@@ -167,15 +167,7 @@ class SearchNode:
         '''
         Returns the number of registered transformers up to this node.
         '''
-        length = 0
-        n = self
-        while n.parent is not None:
-            if n.record is not None:
-                length += 1
-
-            n = n.parent
-
-        return length
+        return len(self.steps(explicit=True))
 
     def __repr__(self):
         return (
@@ -304,7 +296,13 @@ class NodeQueue:
         def secondary(node):
             return len(node)
 
-        self.nodes.sort(key=lambda n: (primary(n), secondary(n)), reverse=True)
+        def tertiary(node):
+            return len(node.steps())
+
+        self.nodes.sort(
+            key=lambda n: (primary(n), secondary(n), tertiary(n)),
+            reverse=True,
+        )
 
     def pop(self) -> SearchNode | None:
         if not self.nodes:
