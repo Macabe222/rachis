@@ -211,7 +211,7 @@ class TestTransitiveUpgradeSpec(unittest.TestCase):
 
 
 class _TransformationGraphTestCase(unittest.TestCase):
-    def _find_path(self, start, target, edges):
+    def _find_path(self, start, target, edges, ff_to_sfdf=None):
         '''
         Find a transformation path through the search graph represented in
         `edges`. Mocks the plugin manager to create artificial transformers
@@ -226,6 +226,10 @@ class _TransformationGraphTestCase(unittest.TestCase):
         edges : list[tuple[type, type, bool | None]]
             Transformers represented by source type, target type, and upgrade
             classification. Their order determines registration order.
+        ff_to_sfdf : dict[type, set[type]] | None
+            Maps file formats to the single-file directory formats that wrap
+            them, as in `PluginManager._ff_to_sfdf`. Only needed when the
+            graph contains formats with implicit wrap/unwrap steps.
 
         Returns
         -------
@@ -239,7 +243,10 @@ class _TransformationGraphTestCase(unittest.TestCase):
                 upgrade=upgrade
             )
 
-        plugin_manager = Mock(transformers=transformers)
+        plugin_manager = Mock(
+            transformers=transformers,
+            _ff_to_sfdf={} if ff_to_sfdf is None else ff_to_sfdf,
+        )
         with patch(
             'rachis.core.transform.sdk.PluginManager',
             return_value=plugin_manager,
@@ -448,6 +455,94 @@ class TestCompetingPathPreferences(_TransformationGraphTestCase):
         )
         self.assertEqual(
             [node.type_ for node in false_registered_first.steps()], expected
+        )
+
+    def test_direct_transformer_preferred_over_wrap_detour(self):
+        '''
+        A transformer registered directly from a file format to the target is
+        preferred over implicitly wrapping the file format into its single-file
+        directory format and using a transformer registered on the directory
+        format. Both paths contain one registered transformer, so the path
+        without the extra implicit step should win.
+        '''
+        class Target:
+            pass
+
+        path = self._find_path(
+            IntSequenceFormat,
+            Target,
+            [
+                (IntSequenceFormat, Target, None),
+                (IntSequenceDirectoryFormat, Target, None),
+            ],
+            ff_to_sfdf={IntSequenceFormat: {IntSequenceDirectoryFormat}},
+        )
+
+        self.assertEqual(
+            [node.type_ for node in path.steps()],
+            [IntSequenceFormat, Target],
+        )
+
+    def test_direct_transformer_preferred_over_unwrap_detour(self):
+        '''
+        A transformer registered directly from a single-file directory format
+        to the target is preferred over implicitly unwrapping the directory
+        format and using a transformer registered on the contained file format.
+        Both paths contain one registered transformer, so the path without the
+        extra implicit step should win.
+        '''
+        class Target:
+            pass
+
+        path = self._find_path(
+            IntSequenceDirectoryFormat,
+            Target,
+            [
+                (IntSequenceDirectoryFormat, Target, None),
+                (IntSequenceFormat, Target, None),
+            ],
+            ff_to_sfdf={IntSequenceFormat: {IntSequenceDirectoryFormat}},
+        )
+
+        self.assertEqual(
+            [node.type_ for node in path.steps()],
+            [IntSequenceDirectoryFormat, Target],
+        )
+
+    def test_direct_transformer_preferred_over_registered_unwrap_detour(self):
+        '''
+        When transformers are registered from `tuple` to both a file format and
+        its single-file directory format, a direct transformation to the file
+        format is preferred over transforming to the directory format and then
+        unwrapping it, regardless of registration order.
+        '''
+        ff_to_sfdf = {IntSequenceFormat: {IntSequenceDirectoryFormat}}
+        file_registered_first = self._find_path(
+            tuple,
+            IntSequenceFormat,
+            [
+                (tuple, IntSequenceFormat, None),
+                (tuple, IntSequenceDirectoryFormat, None),
+            ],
+            ff_to_sfdf=ff_to_sfdf,
+        )
+        directory_registered_first = self._find_path(
+            tuple,
+            IntSequenceFormat,
+            [
+                (tuple, IntSequenceDirectoryFormat, None),
+                (tuple, IntSequenceFormat, None),
+            ],
+            ff_to_sfdf=ff_to_sfdf,
+        )
+
+        expected = [tuple, IntSequenceFormat]
+        self.assertEqual(
+            [node.type_ for node in file_registered_first.steps()], expected
+        )
+        self.assertEqual(
+            [node.type_ for node in directory_registered_first.steps()],
+            expected,
         )
 
 
