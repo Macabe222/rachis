@@ -767,6 +767,87 @@ class TestTransformationComposition(unittest.TestCase):
         self.assertTrue(source_member.exists())
         self.assertEqual(target_member.read_text(), source_member.read_text())
 
+    def _registered_then_unwrap_path(self):
+        '''
+        Builds the path:
+
+            tuple -registered-> IntSequenceDirectoryFormat -unwrap->
+            IntSequenceFormat
+
+        The registered transformer creates a new, framework-owned directory
+        which the unwrap step then aliases.
+
+        Used in tests catching a regression on the unwrapping step where the
+        directory containing the unwrapped file was being destroyed after the
+        unwrapping step completed, leaving the unwrapped file with a dangling
+        path.
+        '''
+        def tuple_to_directory(view):
+            directory = IntSequenceDirectoryFormat()
+            directory.file.path_maker().write_text(
+                ''.join(f'{i}\n' for i in view)
+            )
+            return directory
+
+        node = SearchNode(tuple)
+        node = SearchNode(
+            IntSequenceDirectoryFormat,
+            parent=node,
+            record=Mock(transformer=tuple_to_directory),
+            transform_type=TransformType.registered,
+        )
+        node = SearchNode(
+            IntSequenceFormat,
+            parent=node,
+            transform_type=TransformType.unwrap,
+        )
+
+        return node
+
+    def test_unwrap_of_intermediate_directory_format_mid_chain(self):
+        '''
+        A directory format created by a registered transformer remains on disk
+        while a subsequent step reads the file unwrapped from it.
+
+        Catches a regression where the directory format was being destroyed
+        after unwrapping (all references to the backing OutPath were gone, so
+        the OutPath was destroyed), leaving the unwrapped file format with a
+        dangling path.
+        '''
+        def file_to_list(view):
+            with view.open() as fh:
+                return [int(line) for line in fh]
+
+        node = SearchNode(
+            list,
+            parent=self._registered_then_unwrap_path(),
+            record=Mock(transformer=file_to_list),
+            transform_type=TransformType.registered,
+        )
+
+        result = compose_transformation(node)((1, 2, 3))
+
+        self.assertEqual(result, [1, 2, 3])
+
+    def test_unwrap_of_intermediate_directory_format_as_final_step(self):
+        '''
+        When the final step unwraps a directory format created by a registered
+        transformer, the returned file format remains readable after the
+        transformation returns.
+
+        Catches a regression where the directory format was being destroyed
+        after unwrapping (all references to the backing OutPath were gone, so
+        the OutPath was destroyed), leaving the unwrapped file format with a
+        dangling path.
+        '''
+        node = self._registered_then_unwrap_path()
+
+        result = compose_transformation(node)((1, 2, 3))
+
+        self.assertTrue(result.path.exists())
+        with result.open() as fh:
+            self.assertEqual(fh.read(), '1\n2\n3\n')
+
 
 class TestTransformationRecorder(unittest.TestCase):
     def setUp(self):

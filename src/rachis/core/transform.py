@@ -526,6 +526,17 @@ def unwrap_transformer(sfdf_type: type):
     file_type = sfdf_type.file.format
 
     def transformer(view):
-        return view.file.view(file_type)
+        file_view = view.file.view(file_type)
+        # Retain a reference to our OutPath on the file view so the OutPath
+        # is not destroyed while the file view is still in use. The file view
+        # is a file inside of an OutPath directory, and if we lose all
+        # references to that OutPath, it will be destroyed by the finalizer on
+        # OutPath taking its directory, and thus our file, with it.
+        #
+        # NOTE: I consider this solution to be a bit of a hack. I don't love
+        # post facto slapping new attributes onto objects, but this is the
+        # cleanest and least intrusive way to keep the OutPath alive.
+        file_view.path._source_directory = view.path
+        return file_view
 
     return transformer
